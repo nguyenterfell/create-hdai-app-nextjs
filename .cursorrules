@@ -1,0 +1,146 @@
+# ============================
+# Project Architecture
+# ============================
+- Tech Stack: Next.js 15 (App Router, RSC), Tailwind CSS v4, ShadCN UI, Supabase Auth, Drizzle ORM, PostgreSQL, pnpm, TypeScript, Vercel deployment
+- Framework: Next.js 15 App Router
+- Rendering: React Server Components (default)
+- Mutations: Server Actions inside `app/**/actions.ts` OR API routes in `app/api/**/route.ts` when needed
+- Styling: Tailwind CSS v4 + shadcn/ui
+- DB: PostgreSQL via Drizzle ORM (NOT Supabase client for DB operations)
+- Auth: Supabase Auth with SSR helpers (@supabase/ssr)
+- Validation: Zod schemas for all server actions and API routes
+- Testing: Vitest with @testing-library/react
+- Package Manager: pnpm (use `pnpm add` when installing new packages)
+- Deployment: Vercel-ready
+
+# ============================
+# Project Context
+# ============================
+- This is a CLI tool that generates Next.js apps
+- The `templates/` directory contains the app template that gets scaffolded
+- When working on the CLI tool itself, modify files in `src/` and `templates/`
+- When working on generated apps, follow the rules below for app structure
+
+# ============================
+# Folder Conventions
+# ============================
+- Page routes are in `app/**/page.tsx` (server components by default)
+- Reusable UI components in `components/`
+- Server Actions in `app/**/actions.ts`
+- API routes in `app/api/**/route.ts` (use when server actions aren't sufficient)
+- Data helpers in `lib/data/**`
+- Database client: `lib/db.ts` (exports `getDatabase()` for Drizzle ORM)
+- Supabase clients:
+    - `lib/supabase/server.ts` (for auth in server components/actions)
+    - `lib/supabase/client.ts` (for auth in client components)
+    - `lib/supabase/middleware.ts` (for middleware session updates)
+- Drizzle schemas in `schema/**/*.ts` (use `pgSchema` and `pgTable`)
+- Zod schemas in `lib/schemas/**` (for validation)
+- Do not create random folders; follow the structure above.
+
+# ============================
+# Data Access Rules
+# ============================
+- Server Components and Server Actions may call Drizzle ORM directly via `getDatabase()` from `lib/db.ts`.
+- Client Components must NEVER call Drizzle ORM or database directly.
+- For authentication, use Supabase clients:
+    - Server: `createClient()` from `lib/supabase/server.ts` (async)
+    - Client: `createClient()` from `lib/supabase/client.ts` (sync)
+- When fetching data:
+    - Use server components when possible
+    - Keep queries as close to the page as possible
+    - Return typed results (infer types from Drizzle schema)
+- Database schema:
+    - Use `pgSchema('app')` for application tables
+    - Export types: `export type EntityName = typeof tableName.$inferSelect;`
+    - Export insert types: `export type NewEntityName = typeof tableName.$inferInsert;`
+    - Export all schemas from `schema/index.ts`
+
+# ============================
+# Database & Schema Rules
+# ============================
+- Use Drizzle ORM for all database operations (NOT Supabase client for DB)
+- Schema files go in `schema/*.ts` using Drizzle's `pgSchema` and `pgTable`
+- Always use the `appSchema` pattern: `export const appSchema = pgSchema('app');`
+- After schema changes:
+    1. Run `pnpm db:generate` to generate migrations
+    2. Run `pnpm db:push` to apply migrations
+- Use `getDatabase()` from `lib/db.ts` to get the Drizzle instance
+- Import schema types from `schema/index.ts`
+
+# ============================
+# Feature Scaffolding Rules
+# ============================
+For every new feature:
+
+1. Create Drizzle schema in `schema/*.ts` (if data changes)
+2. Create Zod schema in `lib/schemas/**` (for validation)
+3. Add DB table via Drizzle schema (if needed)
+4. Create server actions for create/update/delete in `app/**/actions.ts`
+   - OR use API routes in `app/api/**/route.ts` if server actions aren't sufficient
+5. Create UI:
+    - `page.tsx` (server component)
+    - Client UI elements in `components/` (mark with `'use client'`)
+6. Confirm type correctness end-to-end
+7. Include optimistic UI when appropriate
+8. Add tests using Vitest
+
+# ============================
+# API Routes vs Server Actions
+# ============================
+- Prefer Server Actions (`app/**/actions.ts`) for form submissions and mutations
+- Use API routes (`app/api/**/route.ts`) when:
+    - You need webhooks or external integrations
+    - You need specific HTTP methods/status codes
+    - You need middleware that server actions don't support
+- Both should use Drizzle ORM via `getDatabase()` for database operations
+- Both should use Supabase auth via `createClient()` from `lib/supabase/server.ts`
+
+# ============================
+# Component Patterns
+# ============================
+- Use shadcn/ui components from `components/ui/`
+- Install new shadcn components: `npx shadcn@latest add [component]`
+- Client components must be marked with `'use client'` directive
+- Server components are the default (no directive needed)
+- Use `cn()` utility from `lib/utils.ts` for className merging
+- Follow shadcn/ui patterns and styling conventions
+
+# ============================
+# Package Management
+# ============================
+- Always use `pnpm add [package]` when installing new packages
+- Use `pnpm add -D [package]` for dev dependencies
+- Never use `npm` or `yarn` commands
+
+# ============================
+# Environment Variables
+# ============================
+- You cannot see or modify `.env` files directly
+- If environment variables are needed, tell the user what to add to their `.env` or `.env.local` file
+- Common variables:
+    - `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
+    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
+    - `DATABASE_URL` - PostgreSQL connection string
+
+# ============================
+# Testing Rules
+# ============================
+- Use Vitest for all tests
+- Test files: `**/*.test.ts` or `**/*.spec.ts`
+- For API routes: Test actual HTTP endpoints
+- For components: Use @testing-library/react
+- Config: `vitest.config.ts` and `vitest.setup.ts`
+- Run tests: `pnpm test` or `pnpm test:ui`
+
+# ============================
+# What NOT to do
+# ============================
+- Do NOT use Supabase client for database operations (use Drizzle ORM)
+- Do NOT use `fetch('/api/...')` in client components unless explicitly needed (prefer server actions)
+- Do NOT create API routes if a server action will do
+- Do NOT add `"use client"` unless UI needs interactivity
+- Do NOT call `getDatabase()` or database operations from client components
+- Do NOT use Supabase admin keys in client components
+- Do NOT skip schema migrations - always run `pnpm db:generate` and `pnpm db:push` after schema changes
+

@@ -7,6 +7,32 @@ import { createApp } from './create-app.js';
 import { connectService } from './connect.js';
 import { checkStatus } from './status.js';
 import { verifySetup } from './verify.js';
+import { checkDependencies } from './utils.js';
+
+// Run dependency check before initializing CLI
+async function initializeCLI() {
+  const checkResult = await checkDependencies();
+  
+  if (checkResult.warnings.length > 0) {
+    console.log(chalk.yellow('\n⚠️  Dependency Warnings:'));
+    checkResult.warnings.forEach((warning) => {
+      console.log(chalk.yellow(`   ${warning}`));
+    });
+    console.log(); // Empty line for spacing
+  }
+  
+  if (!checkResult.success) {
+    console.error(chalk.red('\n❌ Dependency Check Failed:\n'));
+    checkResult.errors.forEach((error) => {
+      console.error(chalk.red(`   ${error}`));
+    });
+    console.error(chalk.gray('\nSee docs/REQUIREMENTS.md for detailed installation instructions.\n'));
+    process.exit(1);
+  }
+}
+
+// Initialize and check dependencies
+await initializeCLI();
 
 const program = new Command();
 

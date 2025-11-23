@@ -77,7 +77,7 @@ async function testSupabaseAuth(): Promise<TestResult> {
     
     // Even if there's no session, if we get a response (no network error), the connection works
     // The error might be about auth, not connectivity
-    if (error && error.message.includes('fetch')) {
+    if (error && typeof error.message === 'string' && error.message.includes('fetch')) {
       return {
         name: 'Supabase Auth Connection',
         success: false,

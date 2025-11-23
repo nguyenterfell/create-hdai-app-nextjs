@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs-extra';
 import chalk from 'chalk';
+import inquirer from 'inquirer';
 import { Ora } from 'ora';
 import {
   isDockerRunning,
@@ -110,11 +111,8 @@ export async function setupProject(projectPath: string, config: SetupConfig, spi
     });
   }
 
-  // Test connectivity to database and auth services
-  if (spinner && spinner.isSpinning) {
-    spinner.text = 'Testing connectivity...';
-  }
-  await testConnectivity(projectPath, spinner);
+  // Final step: Check what needs to be started and run connectivity tests
+  await runFinalConnectivityCheck(projectPath, config, spinner);
 }
 
 async function setupLocalSupabase(projectPath: string, spinner?: Ora) {
@@ -285,12 +283,325 @@ async function createEnvFiles(projectPath: string, config: SetupConfig) {
   }
 }
 
-async function testConnectivity(projectPath: string, spinner?: Ora) {
+async function runFinalConnectivityCheck(
+  projectPath: string,
+  config: SetupConfig,
+  spinner?: Ora
+) {
+  // Stop spinner for user interaction
+  if (spinner && spinner.isSpinning) {
+    spinner.stop();
+  }
+
+  console.log(chalk.blue('\n🔍 Final Connectivity Check\n'));
+  console.log(chalk.gray('─'.repeat(60)));
+
+  // Check what needs to be started/configured
+  const needsSetup = await checkWhatNeedsSetup(projectPath, config);
+
+  // Display requirements if there are any issues (services, config, or prerequisites)
+  const hasIssues = 
+    needsSetup.servicesToStart.length > 0 || 
+    needsSetup.configNeeded.length > 0 || 
+    needsSetup.missingPrerequisites.length > 0;
+
+  if (hasIssues) {
+    // Display what needs to be done
+    displaySetupRequirements(needsSetup);
+
+    // If there are missing prerequisites, we can't proceed with starting services
+    // but we can still run connectivity tests to show what's missing
+    if (needsSetup.missingPrerequisites.length > 0) {
+      console.log(chalk.yellow('\n⚠️  Missing prerequisites detected. Connectivity tests will likely fail.\n'));
+      console.log(chalk.gray('   You can still run connectivity tests to see what needs to be configured.\n'));
+      
+      // Ask if user wants to proceed with tests anyway
+      const { shouldTest } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'shouldTest',
+          message: 'Would you like to run connectivity tests anyway? (They will likely fail)',
+          default: false,
+        },
+      ]);
+
+      if (!shouldTest) {
+        console.log(chalk.yellow('\n⏭️  Skipping connectivity tests. Fix prerequisites and run "pnpm test:connectivity" later.\n'));
+        return;
+      }
+    } else {
+      // No missing prerequisites, can start services and run tests
+      const { shouldStart } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'shouldStart',
+          message: 'Would you like to start necessary services and run connectivity tests now?',
+          default: true,
+        },
+      ]);
+
+      if (!shouldStart) {
+        console.log(chalk.yellow('\n⏭️  Skipping connectivity tests. You can run them later with: pnpm test:connectivity\n'));
+        return;
+      }
+
+      // Start services if needed
+      if (needsSetup.servicesToStart.length > 0) {
+        if (spinner) {
+          spinner.start('Starting services...');
+        }
+        await startRequiredServices(projectPath, needsSetup.servicesToStart, spinner);
+      }
+    }
+  }
+
+  // Run connectivity tests
+  if (spinner) {
+    spinner.start('Running connectivity tests...');
+  }
+  await testConnectivity(projectPath, config, spinner);
+}
+
+interface SetupRequirements {
+  servicesToStart: string[];
+  configNeeded: Array<{
+    type: 'database' | 'auth';
+    message: string;
+    action: string;
+  }>;
+  missingPrerequisites: string[];
+}
+
+/**
+ * Unified validation function to check if an environment variable value is configured.
+ * This ensures consistent validation logic across all checks.
+ * 
+ * @param value - The environment variable value to check
+ * @param type - The type of variable ('database' or 'auth')
+ * @returns true if the value is properly configured, false otherwise
+ */
+function isEnvValueConfigured(value: string, type: 'database' | 'auth'): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const trimmed = value.trim();
+
+  // Check if it's a comment (starts with #)
+  if (trimmed.startsWith('#')) {
+    return false;
+  }
+
+  // Strip inline comments (everything after #)
+  // This handles cases like: DATABASE_URL=postgresql://url #comment
+  // Note: # is very unlikely to be part of a valid database URL or Supabase URL,
+  // so we can safely treat any # as the start of a comment
+  let valueWithoutComment = trimmed;
+  const commentIndex = trimmed.indexOf('#');
+  if (commentIndex !== -1) {
+    valueWithoutComment = trimmed.substring(0, commentIndex).trim();
+  }
+
+  // If after stripping comments, the value is empty, it's not configured
+  if (!valueWithoutComment) {
+    return false;
+  }
+
+  // Check for placeholder patterns specific to our templates
+  const placeholderPatterns = {
+    database: [
+      'your-production-database-url',
+      'your-production',
+      'your-local-anon-key', // Sometimes used as placeholder
+    ],
+    auth: [
+      'your-supabase-url',
+      'your-supabase-anon-key',
+      'your-supabase',
+      'your-local-anon-key',
+    ],
+  };
+
+  const patterns = placeholderPatterns[type];
+  for (const pattern of patterns) {
+    if (valueWithoutComment.includes(pattern)) {
+      return false;
+    }
+  }
+
+  // Value is configured if it's not empty, not a comment, doesn't have inline comments, and doesn't contain placeholders
+  return valueWithoutComment.length > 0;
+}
+
+async function checkWhatNeedsSetup(
+  projectPath: string,
+  config: SetupConfig
+): Promise<SetupRequirements> {
+  const requirements: SetupRequirements = {
+    servicesToStart: [],
+    configNeeded: [],
+    missingPrerequisites: [],
+  };
+
+  const envLocalPath = path.join(projectPath, '.env.local');
+  let envContent = '';
+  if (await fs.pathExists(envLocalPath)) {
+    envContent = await fs.readFile(envLocalPath, 'utf-8');
+  }
+
+  // Check for local development setup
+  if (!config.useProductionDatabase && !config.useProductionAuth) {
+    // Check if Supabase needs to be started
+    const supabaseRunning = await isSupabaseRunning(projectPath);
+    if (!supabaseRunning) {
+      const dockerRunning = await isDockerRunning();
+      if (dockerRunning) {
+        requirements.servicesToStart.push('Supabase (local)');
+      } else {
+        requirements.missingPrerequisites.push('Docker Desktop (required to run Supabase locally)');
+      }
+    }
+
+    // Check if credentials need to be fetched
+    if (envContent.includes('your-local-anon-key') || !envContent.includes('NEXT_PUBLIC_SUPABASE_ANON_KEY=')) {
+      if (!supabaseRunning) {
+        requirements.configNeeded.push({
+          type: 'auth',
+          message: 'Supabase credentials need to be fetched',
+          action: 'Start Supabase to auto-fetch credentials',
+        });
+      }
+    }
+  }
+
+  // Check for production database configuration
+  if (config.useProductionDatabase) {
+    const dbUrlMatch = envContent.match(/^DATABASE_URL=(.+)$/m);
+    const hasDbUrl = dbUrlMatch && isEnvValueConfigured(dbUrlMatch[1], 'database');
+    if (!hasDbUrl) {
+      const dbType = config.useProductionDatabase;
+      requirements.configNeeded.push({
+        type: 'database',
+        message: `Production ${dbType} database URL not configured`,
+        action: `Add DATABASE_URL to .env.local (get from ${dbType === 'supabase' ? 'Supabase' : dbType === 'neon' ? 'Neon' : 'your database provider'} dashboard)`,
+      });
+    }
+  }
+
+  // Check for production auth configuration
+  if (config.useProductionAuth) {
+    const authUrlMatch = envContent.match(/^NEXT_PUBLIC_SUPABASE_URL=(.+)$/m);
+    const authKeyMatch = envContent.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.+)$/m);
+    const hasAuthUrl = authUrlMatch && isEnvValueConfigured(authUrlMatch[1], 'auth');
+    const hasAuthKey = authKeyMatch && isEnvValueConfigured(authKeyMatch[1], 'auth');
+    if (!hasAuthUrl || !hasAuthKey) {
+      requirements.configNeeded.push({
+        type: 'auth',
+        message: 'Production Supabase Auth credentials not configured',
+        action: 'Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local (get from Supabase dashboard)',
+      });
+    }
+  }
+
+  return requirements;
+}
+
+function displaySetupRequirements(requirements: SetupRequirements) {
+  console.log(chalk.yellow('\n📋 Setup Requirements:\n'));
+
+  if (requirements.missingPrerequisites.length > 0) {
+    console.log(chalk.red('❌ Missing Prerequisites:'));
+    requirements.missingPrerequisites.forEach((item) => {
+      console.log(chalk.red(`   • ${item}`));
+    });
+    console.log('');
+  }
+
+  if (requirements.servicesToStart.length > 0) {
+    console.log(chalk.cyan('🚀 Services to Start:'));
+    requirements.servicesToStart.forEach((service) => {
+      console.log(chalk.white(`   • ${service}`));
+    });
+    console.log('');
+  }
+
+  if (requirements.configNeeded.length > 0) {
+    console.log(chalk.yellow('⚙️  Configuration Needed:'));
+    requirements.configNeeded.forEach((config) => {
+      const icon = config.type === 'database' ? '🗄️' : '🔐';
+      console.log(chalk.white(`   ${icon} ${config.message}`));
+      console.log(chalk.gray(`      → ${config.action}`));
+    });
+    console.log('');
+  }
+
+  if (
+    requirements.servicesToStart.length === 0 &&
+    requirements.configNeeded.length === 0 &&
+    requirements.missingPrerequisites.length === 0
+  ) {
+    console.log(chalk.green('✅ Everything is ready! Running connectivity tests...\n'));
+  }
+}
+
+async function startRequiredServices(
+  projectPath: string,
+  services: string[],
+  spinner?: Ora
+) {
+  for (const service of services) {
+    if (service.includes('Supabase')) {
+      try {
+        if (spinner && spinner.isSpinning) {
+          spinner.text = `Starting ${service}...`;
+        }
+
+        // Check if Supabase is already running
+        if (await isSupabaseRunning(projectPath)) {
+          if (spinner && spinner.isSpinning) {
+            spinner.text = `${service} is already running`;
+          }
+          continue;
+        }
+
+        // Start Supabase
+        execSync('npx supabase start', {
+          cwd: projectPath,
+          stdio: 'pipe',
+        });
+
+        // Fetch and update credentials
+        const credentials = await getSupabaseLocalCredentials(projectPath);
+        if (credentials) {
+          const envLocalPath = path.join(projectPath, '.env.local');
+          await updateEnvFile(envLocalPath, {
+            NEXT_PUBLIC_SUPABASE_URL: credentials.apiUrl,
+            NEXT_PUBLIC_SUPABASE_ANON_KEY: credentials.anonKey,
+            DATABASE_URL: credentials.dbUrl,
+          });
+          console.log(chalk.green(`✅ ${service} started and credentials updated`));
+        } else {
+          console.log(chalk.yellow(`⚠️  ${service} started but credentials not fetched`));
+        }
+      } catch (error) {
+        console.log(chalk.red(`❌ Failed to start ${service}`));
+        console.log(chalk.gray('   You can start it manually later with: npx supabase start'));
+      }
+    }
+  }
+}
+
+async function testConnectivity(projectPath: string, config: SetupConfig, spinner?: Ora) {
+  // Stop spinner to show test output clearly
+  if (spinner && spinner.isSpinning) {
+    spinner.stop();
+  }
+
   try {
     // Check if .env.local exists
     const envLocalPath = path.join(projectPath, '.env.local');
     if (!(await fs.pathExists(envLocalPath))) {
-      spinner?.warn('Skipping connectivity tests: .env.local not found');
+      console.log(chalk.yellow('\n⚠️  Skipping connectivity tests: .env.local not found\n'));
       return;
     }
 
@@ -300,58 +611,77 @@ async function testConnectivity(projectPath: string, spinner?: Ora) {
       stdio: 'inherit',
     });
     
-    if (spinner && spinner.isSpinning) {
-      spinner.text = 'Connectivity tests passed';
-    }
+    // If we get here, tests passed
+    console.log(chalk.green('\n✅ Connectivity tests completed successfully!\n'));
   } catch (error) {
     // The test script will output its own error messages
-    // We just need to handle the case where the script fails
-    spinner?.warn('Some connectivity tests failed. Check the output above for details.');
-    
-    // Display helpful instructions based on what might be missing
-    console.log(chalk.yellow('\n📝 Setup Instructions:\n'));
-    
-    const envLocalPath = path.join(projectPath, '.env.local');
-    if (await fs.pathExists(envLocalPath)) {
-      const envContent = await fs.readFile(envLocalPath, 'utf-8');
-      
-      // Check what's missing or needs configuration
-      const needsDatabase = !envContent.match(/^DATABASE_URL=(?!.*#).*$/m) || 
-                           envContent.includes('your-production-database-url') ||
-                           envContent.includes('your-local-anon-key');
-      const needsAuth = !envContent.match(/^NEXT_PUBLIC_SUPABASE_URL=(?!.*#).*$/m) ||
-                        envContent.includes('your-supabase-url') ||
-                        envContent.includes('your-local-anon-key');
-      
-      if (needsDatabase) {
-        console.log(chalk.cyan('🗄️  Database Setup:'));
-        if (envContent.includes('localhost:54322')) {
-          console.log(chalk.white('   1. Make sure Supabase is running:'));
-          console.log(chalk.gray('      npx supabase start'));
-          console.log(chalk.white('   2. Or update DATABASE_URL in .env.local with your production database URL'));
-        } else {
-          console.log(chalk.white('   1. Update DATABASE_URL in .env.local with your database connection string'));
-          console.log(chalk.gray('      Format: postgresql://user:password@host:port/database'));
-        }
-        console.log('');
-      }
-      
-      if (needsAuth) {
-        console.log(chalk.cyan('🔐 Auth Setup:'));
-        if (envContent.includes('localhost:54321')) {
-          console.log(chalk.white('   1. Make sure Supabase is running:'));
-          console.log(chalk.gray('      npx supabase start'));
-          console.log(chalk.white('   2. The anon key will be fetched automatically when Supabase starts'));
-        } else {
-          console.log(chalk.white('   1. Get your Supabase project URL and anon key from:'));
-          console.log(chalk.gray('      https://supabase.com/dashboard/project/_/settings/api'));
-          console.log(chalk.white('   2. Update NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local'));
-        }
-        console.log('');
-      }
+    // Now display comprehensive results and recommendations
+    await displayConnectivityResults(projectPath, config);
+  }
+}
+
+async function displayConnectivityResults(projectPath: string, config: SetupConfig) {
+  console.log(chalk.yellow('\n📊 Connectivity Test Results & Recommendations\n'));
+  console.log(chalk.gray('─'.repeat(60)));
+
+  const envLocalPath = path.join(projectPath, '.env.local');
+  if (!(await fs.pathExists(envLocalPath))) {
+    console.log(chalk.red('\n❌ .env.local file not found'));
+    console.log(chalk.white('   Create .env.local with your environment variables\n'));
+    return;
+  }
+
+  const envContent = await fs.readFile(envLocalPath, 'utf-8');
+  const recommendations: string[] = [];
+
+  // Check database configuration
+  const dbUrlMatch = envContent.match(/^DATABASE_URL=(.+)$/m);
+  const hasDbUrl = dbUrlMatch && isEnvValueConfigured(dbUrlMatch[1], 'database');
+  
+  if (!hasDbUrl) {
+    console.log(chalk.red('❌ Database: Not configured'));
+    if (config.useProductionDatabase) {
+      const dbType = config.useProductionDatabase;
+      console.log(chalk.white(`   Action: Add DATABASE_URL to .env.local`));
+      console.log(chalk.gray(`   Get from: ${dbType === 'supabase' ? 'https://supabase.com/dashboard' : dbType === 'neon' ? 'https://neon.tech' : 'your database provider'}`));
+    } else {
+      console.log(chalk.white('   Action: Start Supabase locally'));
+      console.log(chalk.gray('   Run: npx supabase start'));
     }
-    
-    console.log(chalk.yellow('💡 After configuring, run: pnpm test:connectivity\n'));
+    recommendations.push('Configure DATABASE_URL in .env.local');
+  } else {
+    console.log(chalk.green('✅ Database: Configured'));
+  }
+
+  // Check auth configuration
+  const authUrlMatch = envContent.match(/^NEXT_PUBLIC_SUPABASE_URL=(.+)$/m);
+  const authKeyMatch = envContent.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.+)$/m);
+  const hasAuthUrl = authUrlMatch && isEnvValueConfigured(authUrlMatch[1], 'auth');
+  const hasAuthKey = authKeyMatch && isEnvValueConfigured(authKeyMatch[1], 'auth');
+
+  if (!hasAuthUrl || !hasAuthKey) {
+    console.log(chalk.red('❌ Auth: Not configured'));
+    if (config.useProductionAuth) {
+      console.log(chalk.white('   Action: Add Supabase Auth credentials to .env.local'));
+      console.log(chalk.gray('   Get from: https://supabase.com/dashboard/project/_/settings/api'));
+    } else {
+      console.log(chalk.white('   Action: Start Supabase to auto-fetch credentials'));
+      console.log(chalk.gray('   Run: npx supabase start'));
+    }
+    recommendations.push('Configure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local');
+  } else {
+    console.log(chalk.green('✅ Auth: Configured'));
+  }
+
+  // Display recommendations
+  if (recommendations.length > 0) {
+    console.log(chalk.yellow('\n📝 Next Steps:\n'));
+    recommendations.forEach((rec, index) => {
+      console.log(chalk.white(`   ${index + 1}. ${rec}`));
+    });
+    console.log(chalk.gray('\n   After fixing, run: pnpm test:connectivity\n'));
+  } else {
+    console.log(chalk.green('\n✅ All services are configured!\n'));
   }
 }
 

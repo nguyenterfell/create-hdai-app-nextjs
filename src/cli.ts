@@ -3,16 +3,18 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
+import inquirer from 'inquirer';
 import { createApp } from './create-app.js';
 import { connectService } from './connect.js';
 import { checkStatus } from './status.js';
 import { verifySetup } from './verify.js';
-import { checkDependencies } from './utils.js';
+import { checkDependencies, installPnpm, installLocalDependencies } from './utils.js';
 
 // Run dependency check before initializing CLI
 async function initializeCLI() {
-  const checkResult = await checkDependencies();
+  let checkResult = await checkDependencies();
   
+  // Show warnings
   if (checkResult.warnings.length > 0) {
     console.log(chalk.yellow('\n⚠️  Dependency Warnings:'));
     checkResult.warnings.forEach((warning) => {
@@ -21,13 +23,97 @@ async function initializeCLI() {
     console.log(); // Empty line for spacing
   }
   
+  // If dependencies are missing, offer to install them
   if (!checkResult.success) {
-    console.error(chalk.red('\n❌ Dependency Check Failed:\n'));
+    console.log(chalk.yellow('\n⚠️  Dependency Check Results:\n'));
     checkResult.errors.forEach((error) => {
-      console.error(chalk.red(`   ${error}`));
+      console.log(chalk.yellow(`   ${error}`));
     });
-    console.error(chalk.gray('\nSee docs/REQUIREMENTS.md for detailed installation instructions.\n'));
-    process.exit(1);
+    console.log();
+    
+    // Build list of installable items
+    const itemsToInstall: string[] = [];
+    const installActions: Array<() => Promise<boolean>> = [];
+    
+    if (checkResult.installable.pnpm.needsInstall) {
+      itemsToInstall.push('pnpm (package manager)');
+      installActions.push(() => installPnpm(false));
+    } else if (checkResult.installable.pnpm.needsUpgrade) {
+      itemsToInstall.push(`pnpm (upgrade from ${checkResult.installable.pnpm.currentVersion} to >=8.0.0)`);
+      installActions.push(() => installPnpm(true));
+    }
+    
+    if (checkResult.installable.localDeps.needsInstall) {
+      itemsToInstall.push(`Local dependencies: ${checkResult.installable.localDeps.missing.join(', ')}`);
+      installActions.push(() => installLocalDependencies());
+    }
+    
+    // If there are installable items, prompt the user
+    if (itemsToInstall.length > 0) {
+      console.log(chalk.cyan('The following dependencies can be installed automatically:\n'));
+      itemsToInstall.forEach((item, index) => {
+        console.log(chalk.cyan(`   ${index + 1}. ${item}`));
+      });
+      console.log();
+      
+      const { shouldInstall } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'shouldInstall',
+          message: 'Would you like to install these dependencies now?',
+          default: true,
+        },
+      ]);
+      
+      if (shouldInstall) {
+        const spinner = ora('Installing dependencies...').start();
+        
+        try {
+          // Install all items sequentially
+          for (let i = 0; i < installActions.length; i++) {
+            const success = await installActions[i]();
+            if (!success) {
+              spinner.fail(chalk.red(`Failed to install: ${itemsToInstall[i]}`));
+              console.error(chalk.red('\nPlease install dependencies manually.'));
+              console.error(chalk.gray('See docs/REQUIREMENTS.md for detailed installation instructions.\n'));
+              process.exit(1);
+            }
+          }
+          
+          spinner.succeed(chalk.green('Dependencies installed successfully!'));
+          console.log();
+          
+          // Re-check dependencies after installation
+          checkResult = await checkDependencies();
+          
+          if (!checkResult.success) {
+            console.error(chalk.red('\n❌ Some dependencies are still missing after installation.\n'));
+            checkResult.errors.forEach((error) => {
+              console.error(chalk.red(`   ${error}`));
+            });
+            console.error(chalk.gray('\nSee docs/REQUIREMENTS.md for detailed installation instructions.\n'));
+            process.exit(1);
+          }
+        } catch (error) {
+          spinner.fail(chalk.red('Failed to install dependencies'));
+          console.error(error);
+          console.error(chalk.gray('\nSee docs/REQUIREMENTS.md for detailed installation instructions.\n'));
+          process.exit(1);
+        }
+      } else {
+        console.log(chalk.gray('\nInstallation cancelled. Please install dependencies manually.'));
+        console.error(chalk.gray('See docs/REQUIREMENTS.md for detailed installation instructions.\n'));
+        process.exit(1);
+      }
+    } else {
+      // Non-installable errors (like Node.js version)
+      console.error(chalk.red('\n❌ Dependency Check Failed:\n'));
+      checkResult.errors.forEach((error) => {
+        console.error(chalk.red(`   ${error}`));
+      });
+      console.error(chalk.gray('\nSee docs/REQUIREMENTS.md for detailed installation instructions.\n'));
+      process.exit(1);
+    }
   }
 }
 

@@ -174,6 +174,10 @@ export interface DependencyCheckResult {
   success: boolean;
   errors: string[];
   warnings: string[];
+  installable: {
+    pnpm: { needsInstall: boolean; needsUpgrade: boolean; currentVersion?: string };
+    localDeps: { needsInstall: boolean; missing: string[] };
+  };
 }
 
 /**
@@ -339,25 +343,76 @@ export async function checkDependencies(): Promise<DependencyCheckResult> {
   // 3. Generated apps expect pnpm for their scripts
   const pnpmCheck = checkPnpm();
   
+  const pnpmInstallable = {
+    needsInstall: !pnpmCheck.installed,
+    needsUpgrade: pnpmCheck.installed && !pnpmCheck.meetsRequirement,
+    currentVersion: pnpmCheck.version || undefined,
+  };
+  
   if (!pnpmCheck.installed) {
-    errors.push('pnpm is required but not installed. Install it with: npm install -g pnpm');
-    errors.push('See docs/REQUIREMENTS.md for detailed installation instructions.');
+    errors.push('pnpm is required but not installed.');
   } else if (!pnpmCheck.meetsRequirement) {
-    errors.push(`pnpm version ${pnpmCheck.version} is below required version 8.0.0. Upgrade with: npm install -g pnpm@latest`);
+    errors.push(`pnpm version ${pnpmCheck.version} is below required version 8.0.0.`);
   }
   
   // Check local dependencies (only for local development)
   const depsCheck = await checkLocalDependencies();
+  const localDepsInstallable = {
+    needsInstall: !depsCheck.installed,
+    missing: depsCheck.missing,
+  };
+  
   if (!depsCheck.installed) {
-    const packageManager = pnpmCheck.installed ? 'pnpm' : 'npm';
     errors.push(`Missing required dependencies: ${depsCheck.missing.join(', ')}`);
-    errors.push(`Install dependencies with: ${packageManager} install`);
   }
   
   return {
     success: errors.length === 0,
     errors,
     warnings,
+    installable: {
+      pnpm: pnpmInstallable,
+      localDeps: localDepsInstallable,
+    },
   };
+}
+
+/**
+ * Install pnpm globally
+ */
+export async function installPnpm(upgrade: boolean = false): Promise<boolean> {
+  try {
+    const command = upgrade ? 'npm install -g pnpm@latest' : 'npm install -g pnpm';
+    execSync(command, { stdio: 'inherit' });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Install local dependencies
+ */
+export async function installLocalDependencies(): Promise<boolean> {
+  try {
+    const projectRoot = path.resolve(__dirname, '..');
+    const packageJsonPath = path.join(projectRoot, 'package.json');
+    
+    if (!(await fs.pathExists(packageJsonPath))) {
+      return false;
+    }
+    
+    // Check if pnpm is available, fallback to npm
+    const pnpmCheck = checkPnpm();
+    const packageManager = pnpmCheck.installed ? 'pnpm' : 'npm';
+    
+    execSync(`${packageManager} install`, {
+      cwd: projectRoot,
+      stdio: 'inherit',
+    });
+    return true;
+  } catch (error) {
+    return false;
+  }
 }
 

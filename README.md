@@ -115,6 +115,51 @@ This command checks:
 - pnpm 8+
 - Docker (for local Supabase)
 
+## Dependency Check & Auto-Installation
+
+The CLI automatically checks dependencies before running any commands. If dependencies are missing, it will offer to install them automatically.
+
+### Dependency Check Flow
+
+When you run the CLI, it follows this process:
+
+1. **Check dependencies** → Compares your environment against `REQUIREMENTS.md` requirements
+2. **List missing items** → Shows what needs to be installed
+3. **Prompt user** → Asks for confirmation to install dependencies
+4. **Install** → Automatically installs pnpm and/or local dependencies if confirmed
+5. **Verify** → Re-checks to ensure everything is installed correctly
+
+### What Gets Checked
+
+- **Node.js version** - Must be >= 20.0.0
+- **pnpm** - Must be installed and >= 8.0.0 (required for CLI operations)
+- **Local dependencies** - Required npm packages for local development (commander, chalk, ora, etc.)
+
+### User Experience
+
+Instead of failing immediately, the CLI:
+- ✅ Shows what's missing in a clear list
+- ✅ Offers to fix it automatically with a simple yes/no prompt
+- ✅ Installs dependencies with progress feedback
+- ✅ Verifies installation was successful
+- ✅ Only exits if you decline or installation fails
+
+**Example:**
+```bash
+npx create-hdai-app-nextjs my-app
+
+⚠️  Dependency Check Results:
+   pnpm is required but not installed.
+
+The following dependencies can be installed automatically:
+
+   1. pnpm (package manager)
+
+? Would you like to install these dependencies now? (Y/n)
+```
+
+For detailed information about all requirements and dependencies, see [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
+
 ## How It Works
 
 ### Creating a New App - Step by Step

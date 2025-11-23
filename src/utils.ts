@@ -379,14 +379,32 @@ export async function checkDependencies(): Promise<DependencyCheckResult> {
 
 /**
  * Install pnpm globally
+ * Returns an object with success status and error details if failed
  */
-export async function installPnpm(upgrade: boolean = false): Promise<boolean> {
+export async function installPnpm(upgrade: boolean = false): Promise<{ success: boolean; error?: string; needsSudo?: boolean }> {
   try {
     const command = upgrade ? 'npm install -g pnpm@latest' : 'npm install -g pnpm';
-    execSync(command, { stdio: 'inherit' });
-    return true;
-  } catch (error) {
-    return false;
+    execSync(command, { stdio: 'pipe', encoding: 'utf-8' });
+    return { success: true };
+  } catch (error: any) {
+    const errorMessage = error?.stderr?.toString() || error?.message || String(error);
+    const isPermissionError = 
+      errorMessage.includes('EACCES') || 
+      errorMessage.includes('permission denied') ||
+      errorMessage.includes('permissions');
+    
+    if (isPermissionError) {
+      return { 
+        success: false, 
+        needsSudo: true,
+        error: 'Permission denied. Global npm installs require elevated privileges.'
+      };
+    }
+    
+    return { 
+      success: false, 
+      error: errorMessage || 'Unknown error occurred'
+    };
   }
 }
 

@@ -33,19 +33,19 @@ async function initializeCLI() {
     
     // Build list of installable items
     const itemsToInstall: string[] = [];
-    const installActions: Array<() => Promise<boolean>> = [];
+    const installActions: Array<() => Promise<boolean | { success: boolean; error?: string; needsSudo?: boolean }>> = [];
     
     if (checkResult.installable.pnpm.needsInstall) {
       itemsToInstall.push('pnpm (package manager)');
-      installActions.push(() => installPnpm(false));
+      installActions.push(async () => await installPnpm(false));
     } else if (checkResult.installable.pnpm.needsUpgrade) {
       itemsToInstall.push(`pnpm (upgrade from ${checkResult.installable.pnpm.currentVersion} to >=8.0.0)`);
-      installActions.push(() => installPnpm(true));
+      installActions.push(async () => await installPnpm(true));
     }
     
     if (checkResult.installable.localDeps.needsInstall) {
       itemsToInstall.push(`Local dependencies: ${checkResult.installable.localDeps.missing.join(', ')}`);
-      installActions.push(() => installLocalDependencies());
+      installActions.push(async () => await installLocalDependencies());
     }
     
     // If there are installable items, prompt the user
@@ -71,8 +71,42 @@ async function initializeCLI() {
         try {
           // Install all items sequentially
           for (let i = 0; i < installActions.length; i++) {
-            const success = await installActions[i]();
-            if (!success) {
+            const result = await installActions[i]();
+            
+            // Handle pnpm installation result
+            if (typeof result === 'object' && 'success' in result) {
+              if (!result.success) {
+                spinner.fail(chalk.red(`Failed to install: ${itemsToInstall[i]}`));
+                
+                if (result.needsSudo) {
+                  console.error(chalk.yellow('\n⚠️  Permission Error: Global installation requires elevated privileges.\n'));
+                  console.log(chalk.cyan('You have several options to install pnpm:\n'));
+                  
+                  console.log(chalk.white('1. Use sudo (requires password):'));
+                  console.log(chalk.gray('   sudo npm install -g pnpm\n'));
+                  
+                  console.log(chalk.white('2. Use Corepack (recommended, no sudo needed):'));
+                  console.log(chalk.gray('   corepack enable'));
+                  console.log(chalk.gray('   corepack prepare pnpm@latest --activate\n'));
+                  
+                  console.log(chalk.white('3. Use a Node version manager (nvm, fnm, etc.):'));
+                  console.log(chalk.gray('   # With nvm:'));
+                  console.log(chalk.gray('   nvm install --lts'));
+                  console.log(chalk.gray('   npm install -g pnpm\n'));
+                  
+                  console.log(chalk.white('4. Install via standalone script (no npm needed):'));
+                  console.log(chalk.gray('   curl -fsSL https://get.pnpm.io/install.sh | sh -\n'));
+                  
+                  console.log(chalk.gray('After installing pnpm, run the command again.\n'));
+                  console.log(chalk.gray('See docs/REQUIREMENTS.md for detailed instructions.\n'));
+                } else {
+                  console.error(chalk.red(`\nError: ${result.error || 'Installation failed'}\n`));
+                  console.error(chalk.gray('See docs/REQUIREMENTS.md for detailed installation instructions.\n'));
+                }
+                process.exit(1);
+              }
+            } else if (result === false) {
+              // Handle boolean return (for local dependencies)
               spinner.fail(chalk.red(`Failed to install: ${itemsToInstall[i]}`));
               console.error(chalk.red('\nPlease install dependencies manually.'));
               console.error(chalk.gray('See docs/REQUIREMENTS.md for detailed installation instructions.\n'));

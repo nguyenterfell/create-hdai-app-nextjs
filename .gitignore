@@ -49,6 +49,9 @@ Desktop.ini
 test-app/
 *.test-app/
 
+# Generated apps (exclude apps created by running the CLI)
+*-ecomm/
+
 # Keep empty directories
 !.gitkeep
 

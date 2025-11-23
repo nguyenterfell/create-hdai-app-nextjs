@@ -450,10 +450,13 @@ export function displayPrerequisites(config: {
   if (!config.useProductionDatabase && !config.useProductionAuth) {
     console.log(chalk.cyan('\n🔧 Local Development Setup:'));
     console.log(chalk.white('   For local development, you\'ll need:'));
-    console.log(chalk.gray('   1. Docker Desktop installed and running'));
+    console.log(chalk.yellow('   ⚠️  1. Docker Desktop MUST be installed and running'));
+    console.log(chalk.gray('      → Download: https://www.docker.com/products/docker-desktop'));
+    console.log(chalk.gray('      → Make sure Docker Desktop is OPENED and running before proceeding'));
+    console.log(chalk.gray('      → You can verify by running: docker info'));
     console.log(chalk.gray('   2. Supabase CLI (optional - will use npx if not installed)'));
     console.log(chalk.gray('   3. The CLI will attempt to start Supabase automatically'));
-    console.log(chalk.gray('   4. If Supabase fails to start, run: npx supabase start'));
+    console.log(chalk.gray('   4. If Supabase fails to start, ensure Docker Desktop is running, then run: npx supabase start'));
   }
   
   // Production database prerequisites
@@ -522,9 +525,17 @@ export function displayNextSteps(
   
   // Database setup steps
   if (!config.useProductionDatabase) {
-    console.log(chalk.cyan('\n2. Push database schema (if Supabase is running):'));
+    console.log(chalk.cyan('\n2. Start required services:'));
+    console.log(chalk.yellow('   ⚠️  First, ensure Docker Desktop is installed and running:'));
+    console.log(chalk.gray('      → Download: https://www.docker.com/products/docker-desktop'));
+    console.log(chalk.gray('      → Open Docker Desktop application'));
+    console.log(chalk.gray('      → Wait for Docker to fully start (whale icon in system tray)'));
+    console.log(chalk.gray('      → Verify: docker info'));
+    console.log(chalk.white('\n   Then start Supabase (if not already running):'));
+    console.log(chalk.white('   npx supabase start'));
+    console.log(chalk.cyan('\n3. Push database schema:'));
     console.log(chalk.white('   pnpm db:push'));
-    console.log(chalk.gray('   Note: Make sure Supabase is running (npx supabase start)'));
+    console.log(chalk.gray('   Note: This requires Supabase to be running (which requires Docker Desktop)'));
   } else {
     console.log(chalk.cyan('\n2. Configure your production database:'));
     console.log(chalk.white('   - Update DATABASE_URL in .env.local'));
@@ -533,19 +544,29 @@ export function displayNextSteps(
   
   // Auth setup steps
   if (config.useProductionAuth) {
-    console.log(chalk.cyan('\n3. Configure production Supabase Auth:'));
+    const stepNum = !config.useProductionDatabase ? '4' : '3';
+    console.log(chalk.cyan(`\n${stepNum}. Configure production Supabase Auth:`));
     console.log(chalk.white('   - Update NEXT_PUBLIC_SUPABASE_URL in .env.local'));
     console.log(chalk.white('   - Update NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local'));
   }
   
-  console.log(chalk.cyan('\n4. Test connectivity:'));
+  const connectivityStep = !config.useProductionDatabase 
+    ? (config.useProductionAuth ? '5' : '4')
+    : (config.useProductionAuth ? '4' : '3');
+  console.log(chalk.cyan(`\n${connectivityStep}. Test connectivity:`));
   console.log(chalk.white('   pnpm test:connectivity'));
   
-  console.log(chalk.cyan('\n5. Start development server:'));
+  const devStep = !config.useProductionDatabase 
+    ? (config.useProductionAuth ? '6' : '5')
+    : (config.useProductionAuth ? '5' : '4');
+  console.log(chalk.cyan(`\n${devStep}. Start development server:`));
   console.log(chalk.white('   pnpm dev'));
   
   if (config.useProductionDeploy) {
-    console.log(chalk.cyan('\n6. Deploy to Vercel:'));
+    const deployStep = !config.useProductionDatabase 
+      ? (config.useProductionAuth ? '7' : '6')
+      : (config.useProductionAuth ? '6' : '5');
+    console.log(chalk.cyan(`\n${deployStep}. Deploy to Vercel:`));
     console.log(chalk.white('   - Push to GitHub'));
     console.log(chalk.white('   - Import project in Vercel'));
     console.log(chalk.white('   - Add environment variables'));

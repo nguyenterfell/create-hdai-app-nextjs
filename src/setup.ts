@@ -20,8 +20,12 @@ async function checkPrerequisites(config: SetupConfig, spinner?: Ora) {
   // Check for local development prerequisites
   if (!config.useProductionDatabase && !config.useProductionAuth) {
     if (!(await isDockerRunning())) {
-      missing.push('Docker Desktop');
-      warnings.push('Docker is required to run Supabase locally. Install from https://www.docker.com/products/docker-desktop');
+      missing.push('Docker Desktop (must be installed AND opened/running)');
+      warnings.push('Docker Desktop is required to run Supabase locally.');
+      warnings.push('   → Download: https://www.docker.com/products/docker-desktop');
+      warnings.push('   → After installation, OPEN Docker Desktop application');
+      warnings.push('   → Wait for Docker to fully start (check system tray for whale icon)');
+      warnings.push('   → Verify: docker info');
     }
     
     if (!(await isSupabaseCliInstalled())) {
@@ -124,7 +128,10 @@ async function setupLocalSupabase(projectPath: string, spinner?: Ora) {
 
   // Check if Docker is running
   if (!(await isDockerRunning())) {
-    spinner?.warn('Docker is not running (optional - can start later)');
+    spinner?.warn('Docker Desktop is not running. Please install and open Docker Desktop, then try again.');
+    console.log(chalk.yellow('   → Download: https://www.docker.com/products/docker-desktop'));
+    console.log(chalk.yellow('   → After installation, OPEN Docker Desktop application'));
+    console.log(chalk.yellow('   → Wait for Docker to fully start, then run: npx supabase start'));
     return;
   }
 
@@ -458,7 +465,7 @@ async function checkWhatNeedsSetup(
       if (dockerRunning) {
         requirements.servicesToStart.push('Supabase (local)');
       } else {
-        requirements.missingPrerequisites.push('Docker Desktop (required to run Supabase locally)');
+        requirements.missingPrerequisites.push('Docker Desktop (must be installed AND opened/running - required to run Supabase locally)');
       }
     }
 

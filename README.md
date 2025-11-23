@@ -1,8 +1,14 @@
 # create-hdai-app-nextjs
 
-**A CLI tool that scaffolds production-ready Next.js applications with authentication, database, and deployment configured out of the box.**
+**A production-ready Next.js app building starter-kit with authentication, database, and deployment configured out of the box.**
 
-This is a project generator (like `create-next-app`, but with batteries included) that creates a fully configured Next.js 15 application with Supabase authentication, PostgreSQL database via Drizzle ORM, and Vercel deployment setup. Instead of spending hours configuring auth, database connections, and environment variables, you get a working full-stack app in seconds. Perfect for developers who want to skip the boilerplate and start building features immediately.
+This is a comprehensive starter-kit and CLI tool that scaffolds fully configured Next.js 15 applications with Supabase authentication, PostgreSQL database via Drizzle ORM, and Vercel deployment setup. Instead of spending hours configuring auth, database connections, and environment variables, you get a working full-stack app in seconds. Perfect for developers who want to skip the boilerplate and start building features immediately.
+
+**What makes this a starter-kit?**
+- 🎯 **Complete foundation** - Everything you need to build production apps
+- ⚡ **Zero configuration** - Auth, database, and deployment ready from day one
+- 🔧 **Extensible template** - Customize the template to match your needs
+- 🚀 **Production-ready** - Best practices and patterns built-in
 
 ## Quick Start
 

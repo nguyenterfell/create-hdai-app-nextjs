@@ -50,7 +50,7 @@ test-app/
 *.test-app/
 
 # Generated apps (exclude apps created by running the CLI)
-*-ecomm/
+*-gitignore/
 
 # Keep empty directories
 !.gitkeep

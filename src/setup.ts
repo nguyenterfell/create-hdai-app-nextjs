@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs-extra';
 import chalk from 'chalk';
+import { Ora } from 'ora';
 import {
   isDockerRunning,
   isSupabaseCliInstalled,
@@ -16,63 +17,46 @@ export interface SetupConfig {
   useProductionDeploy?: boolean;
 }
 
-export async function setupProject(projectPath: string, config: SetupConfig) {
+export async function setupProject(projectPath: string, config: SetupConfig, spinner?: Ora) {
   // Install dependencies
-  console.log(chalk.cyan('Installing dependencies...'));
+  spinner?.text('Installing dependencies (this may take a few minutes)...');
   execSync('pnpm install', {
     cwd: projectPath,
     stdio: 'inherit',
   });
+  spinner?.text('Dependencies installed');
 
   // Initialize Supabase if using local
   if (!config.useProductionDatabase) {
-    await setupLocalSupabase(projectPath);
+    spinner?.text('Setting up local Supabase...');
+    await setupLocalSupabase(projectPath, spinner);
   }
 
   // Create .env files
+  spinner?.text('Configuring environment variables...');
   await createEnvFiles(projectPath, config);
 
   // Initialize git if not already initialized
   const gitPath = path.join(projectPath, '.git');
   if (!(await fs.pathExists(gitPath))) {
-    console.log(chalk.cyan('Initializing git repository...'));
+    spinner?.text('Initializing git repository...');
     execSync('git init', {
       cwd: projectPath,
-      stdio: 'inherit',
+      stdio: 'pipe',
     });
   }
 }
 
-async function setupLocalSupabase(projectPath: string) {
-  console.log(chalk.cyan('Setting up local Supabase development...'));
-
+async function setupLocalSupabase(projectPath: string, spinner?: Ora) {
   // Check if Supabase CLI is installed
   if (!(await isSupabaseCliInstalled())) {
-    console.warn(
-      chalk.yellow(
-        '⚠️  Supabase CLI not found. Install it with: npm install -g supabase'
-      )
-    );
-    console.log(
-      chalk.gray(
-        '   You can still set up Supabase later. For now, using placeholder credentials.'
-      )
-    );
+    spinner?.warn('Supabase CLI not found (optional - can install later)');
     return;
   }
 
   // Check if Docker is running
   if (!(await isDockerRunning())) {
-    console.warn(
-      chalk.yellow(
-        '⚠️  Docker is not running. Please start Docker to use local Supabase.'
-      )
-    );
-    console.log(
-      chalk.gray(
-        '   You can start Supabase later with: npx supabase start'
-      )
-    );
+    spinner?.warn('Docker is not running (optional - can start later)');
     return;
   }
 
@@ -80,31 +64,26 @@ async function setupLocalSupabase(projectPath: string) {
     // Check if supabase directory already exists (from template)
     const supabasePath = path.join(projectPath, 'supabase');
     if (!(await fs.pathExists(supabasePath))) {
-      console.log(chalk.cyan('Initializing Supabase...'));
+      spinner?.text('Initializing Supabase...');
       execSync('npx supabase init', {
         cwd: projectPath,
-        stdio: 'inherit',
+        stdio: 'pipe',
       });
     }
 
     // Check if Supabase is already running
     if (await isSupabaseRunning(projectPath)) {
-      console.log(chalk.green('✅ Supabase is already running'));
-      // Fetch credentials will happen in createEnvFiles
+      spinner?.text('Supabase is already running');
     } else {
-      console.log(chalk.cyan('Starting Supabase (this may take a moment)...'));
+      spinner?.text('Starting Supabase (this may take 1-2 minutes)...');
       execSync('npx supabase start', {
         cwd: projectPath,
-        stdio: 'inherit',
+        stdio: 'pipe',
       });
-      console.log(chalk.green('✅ Supabase started successfully'));
+      spinner?.text('Supabase started successfully');
     }
   } catch (error) {
-    console.warn(
-      chalk.yellow(
-        '⚠️  Failed to start Supabase. You can start it manually later with: npx supabase start'
-      )
-    );
+    spinner?.warn('Supabase setup skipped (can start manually later)');
   }
 }
 

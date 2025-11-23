@@ -171,7 +171,7 @@ program
   .option('--fast', 'Skip interactive prompts, use defaults')
   .option('--path <path>', 'Path to create the project', process.cwd())
   .action(async (projectName, options) => {
-    const spinner = ora('Creating your Next.js app...').start();
+    const spinner = ora('Initializing...').start();
     
     try {
       await createApp({
@@ -182,6 +182,7 @@ program
         database: options.database,
         deploy: options.deploy,
         fast: options.fast,
+        spinner, // Pass spinner for progress updates
       });
       
       spinner.succeed(chalk.green('App created successfully!'));

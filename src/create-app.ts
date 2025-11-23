@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
+import ora, { Ora } from 'ora';
 import { copyTemplate, processTemplateFiles } from './template.js';
 import { setupProject } from './setup.js';
 
@@ -17,6 +18,7 @@ export interface CreateAppOptions {
   database?: string;
   deploy?: boolean;
   fast?: boolean;
+  spinner?: Ora;
 }
 
 export async function createApp(options: CreateAppOptions) {
@@ -95,9 +97,11 @@ export async function createApp(options: CreateAppOptions) {
   }
 
   // Create project directory
+  options.spinner?.text('Creating project directory...');
   await fs.ensureDir(projectPath);
 
   // Copy template files
+  options.spinner?.text('Copying template files...');
   const templateDir = path.join(__dirname, '..', 'templates', 'app');
   await copyTemplate(templateDir, projectPath, {
     projectName,
@@ -105,6 +109,7 @@ export async function createApp(options: CreateAppOptions) {
   });
 
   // Process template files (replace placeholders)
+  options.spinner?.text('Processing template files...');
   await processTemplateFiles(projectPath, {
     PROJECT_NAME: projectName,
     USE_PRODUCTION_AUTH: config.useProductionAuth ? 'true' : 'false',
@@ -113,7 +118,7 @@ export async function createApp(options: CreateAppOptions) {
   });
 
   // Run setup
-  await setupProject(projectPath, config);
+  await setupProject(projectPath, config, options.spinner);
 
   console.log(chalk.green(`\n✅ Created ${projectName} at ${projectPath}`));
 }

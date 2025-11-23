@@ -333,16 +333,17 @@ export async function checkDependencies(): Promise<DependencyCheckResult> {
   }
   
   // Check package manager
+  // pnpm is REQUIRED because:
+  // 1. Listed in package.json engines as >=8.0.0
+  // 2. CLI hardcodes 'pnpm install' in setup.ts
+  // 3. Generated apps expect pnpm for their scripts
   const pnpmCheck = checkPnpm();
-  const npmAvailable = checkNpm();
   
-  if (!pnpmCheck.installed && !npmAvailable) {
-    errors.push('Neither pnpm nor npm is available. Please install pnpm: npm install -g pnpm');
-  } else if (!pnpmCheck.installed) {
-    warnings.push('pnpm is not installed. npm will be used as fallback, but pnpm is recommended.');
-    warnings.push('Install pnpm: npm install -g pnpm');
+  if (!pnpmCheck.installed) {
+    errors.push('pnpm is required but not installed. Install it with: npm install -g pnpm');
+    errors.push('See docs/REQUIREMENTS.md for detailed installation instructions.');
   } else if (!pnpmCheck.meetsRequirement) {
-    warnings.push(`pnpm version ${pnpmCheck.version} is below recommended version 8.0.0. Consider upgrading: npm install -g pnpm@latest`);
+    errors.push(`pnpm version ${pnpmCheck.version} is below required version 8.0.0. Upgrade with: npm install -g pnpm@latest`);
   }
   
   // Check local dependencies (only for local development)

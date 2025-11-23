@@ -6,6 +6,7 @@ import inquirer from 'inquirer';
 import ora, { Ora } from 'ora';
 import { copyTemplate, processTemplateFiles } from './template.js';
 import { setupProject } from './setup.js';
+import { displayNextSteps } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -133,6 +134,14 @@ export async function createApp(options: CreateAppOptions) {
   // Run setup
   await setupProject(projectPath, config, options.spinner);
 
+  // Stop spinner before showing final messages
+  if (options.spinner && options.spinner.isSpinning) {
+    options.spinner.stop();
+  }
+
   console.log(chalk.green(`\n✅ Created ${projectName} at ${projectPath}`));
+  
+  // Display next steps
+  displayNextSteps(projectName, projectPath, config);
 }
 

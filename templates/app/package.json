@@ -11,7 +11,8 @@
     "db:studio": "drizzle-kit studio",
     "db:generate": "drizzle-kit generate:pg",
     "test": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "test:connectivity": "tsx scripts/test-connectivity.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
@@ -38,7 +39,9 @@
     "@testing-library/react": "^16.1.0",
     "@testing-library/jest-dom": "^6.6.3",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^3.3.0"
+    "tailwind-merge": "^3.3.0",
+    "dotenv": "^16.4.7",
+    "tsx": "^4.19.2"
   }
 }
 

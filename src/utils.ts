@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import chalk from 'chalk';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -432,5 +433,126 @@ export async function installLocalDependencies(): Promise<boolean> {
   } catch (error) {
     return false;
   }
+}
+
+/**
+ * Display prerequisites and setup instructions based on configuration
+ */
+export function displayPrerequisites(config: {
+  useProductionAuth?: boolean;
+  useProductionDatabase?: string;
+  useProductionDeploy?: boolean;
+}): void {
+  console.log(chalk.blue('\n📋 Prerequisites & Setup Instructions\n'));
+  console.log(chalk.gray('─'.repeat(60)));
+  
+  // Local development prerequisites
+  if (!config.useProductionDatabase && !config.useProductionAuth) {
+    console.log(chalk.cyan('\n🔧 Local Development Setup:'));
+    console.log(chalk.white('   For local development, you\'ll need:'));
+    console.log(chalk.gray('   1. Docker Desktop installed and running'));
+    console.log(chalk.gray('   2. Supabase CLI (optional - will use npx if not installed)'));
+    console.log(chalk.gray('   3. The CLI will attempt to start Supabase automatically'));
+    console.log(chalk.gray('   4. If Supabase fails to start, run: npx supabase start'));
+  }
+  
+  // Production database prerequisites
+  if (config.useProductionDatabase) {
+    console.log(chalk.cyan('\n🗄️  Production Database Setup:'));
+    const dbType = config.useProductionDatabase;
+    if (dbType === 'supabase') {
+      console.log(chalk.white('   You selected Supabase (production):'));
+      console.log(chalk.gray('   1. Create a Supabase project at https://supabase.com'));
+      console.log(chalk.gray('   2. Get your database connection string from Project Settings > Database'));
+      console.log(chalk.gray('   3. Update DATABASE_URL in .env.local'));
+    } else if (dbType === 'neon') {
+      console.log(chalk.white('   You selected Neon (production):'));
+      console.log(chalk.gray('   1. Create a Neon project at https://neon.tech'));
+      console.log(chalk.gray('   2. Get your connection string from the dashboard'));
+      console.log(chalk.gray('   3. Update DATABASE_URL in .env.local'));
+    } else if (dbType === 'custom') {
+      console.log(chalk.white('   You selected Custom PostgreSQL (production):'));
+      console.log(chalk.gray('   1. Ensure your PostgreSQL database is accessible'));
+      console.log(chalk.gray('   2. Get your connection string (postgresql://user:pass@host:port/dbname)'));
+      console.log(chalk.gray('   3. Update DATABASE_URL in .env.local'));
+    }
+  }
+  
+  // Production auth prerequisites
+  if (config.useProductionAuth) {
+    console.log(chalk.cyan('\n🔐 Production Auth Setup:'));
+    console.log(chalk.white('   You selected production Supabase Auth:'));
+    console.log(chalk.gray('   1. Create a Supabase project at https://supabase.com (if not already done)'));
+    console.log(chalk.gray('   2. Get your project URL from Project Settings > API'));
+    console.log(chalk.gray('   3. Get your anon/public key from Project Settings > API'));
+    console.log(chalk.gray('   4. Update NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local'));
+  }
+  
+  // Deployment prerequisites
+  if (config.useProductionDeploy) {
+    console.log(chalk.cyan('\n🚀 Deployment Setup:'));
+    console.log(chalk.white('   Vercel deployment is configured:'));
+    console.log(chalk.gray('   1. Push your code to GitHub'));
+    console.log(chalk.gray('   2. Import project in Vercel dashboard'));
+    console.log(chalk.gray('   3. Add environment variables in Vercel project settings'));
+    console.log(chalk.gray('   4. Deploy!'));
+  }
+  
+  console.log(chalk.gray('\n─'.repeat(60)));
+  console.log(chalk.yellow('\n💡 Tip: After setup, run "pnpm test:connectivity" to verify your connections.\n'));
+}
+
+/**
+ * Display next steps after app creation
+ */
+export function displayNextSteps(
+  projectName: string,
+  projectPath: string,
+  config: {
+    useProductionAuth?: boolean;
+    useProductionDatabase?: string;
+    useProductionDeploy?: boolean;
+  }
+): void {
+  console.log(chalk.green('\n✨ Next Steps\n'));
+  console.log(chalk.gray('─'.repeat(60)));
+  
+  console.log(chalk.cyan('\n1. Navigate to your project:'));
+  console.log(chalk.white(`   cd ${projectName}`));
+  
+  // Database setup steps
+  if (!config.useProductionDatabase) {
+    console.log(chalk.cyan('\n2. Push database schema (if Supabase is running):'));
+    console.log(chalk.white('   pnpm db:push'));
+    console.log(chalk.gray('   Note: Make sure Supabase is running (npx supabase start)'));
+  } else {
+    console.log(chalk.cyan('\n2. Configure your production database:'));
+    console.log(chalk.white('   - Update DATABASE_URL in .env.local'));
+    console.log(chalk.white('   - Then run: pnpm db:push'));
+  }
+  
+  // Auth setup steps
+  if (config.useProductionAuth) {
+    console.log(chalk.cyan('\n3. Configure production Supabase Auth:'));
+    console.log(chalk.white('   - Update NEXT_PUBLIC_SUPABASE_URL in .env.local'));
+    console.log(chalk.white('   - Update NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local'));
+  }
+  
+  console.log(chalk.cyan('\n4. Test connectivity:'));
+  console.log(chalk.white('   pnpm test:connectivity'));
+  
+  console.log(chalk.cyan('\n5. Start development server:'));
+  console.log(chalk.white('   pnpm dev'));
+  
+  if (config.useProductionDeploy) {
+    console.log(chalk.cyan('\n6. Deploy to Vercel:'));
+    console.log(chalk.white('   - Push to GitHub'));
+    console.log(chalk.white('   - Import project in Vercel'));
+    console.log(chalk.white('   - Add environment variables'));
+  }
+  
+  console.log(chalk.gray('\n─'.repeat(60)));
+  console.log(chalk.blue('\n📚 Documentation:'));
+  console.log(chalk.gray(`   See ${projectPath}/README.md for more details\n`));
 }
 

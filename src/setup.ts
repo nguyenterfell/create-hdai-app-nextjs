@@ -9,7 +9,48 @@ import {
   isSupabaseRunning,
   getSupabaseLocalCredentials,
   updateEnvFile,
+  displayPrerequisites,
 } from './utils.js';
+
+async function checkPrerequisites(config: SetupConfig, spinner?: Ora) {
+  const missing: string[] = [];
+  const warnings: string[] = [];
+  
+  // Check for local development prerequisites
+  if (!config.useProductionDatabase && !config.useProductionAuth) {
+    if (!(await isDockerRunning())) {
+      missing.push('Docker Desktop');
+      warnings.push('Docker is required to run Supabase locally. Install from https://www.docker.com/products/docker-desktop');
+    }
+    
+    if (!(await isSupabaseCliInstalled())) {
+      warnings.push('Supabase CLI not found. Will use npx supabase (slower but works)');
+    }
+  }
+  
+  // Display warnings
+  if (missing.length > 0) {
+    console.log(chalk.yellow('\n⚠️  Missing Prerequisites:\n'));
+    missing.forEach((item) => {
+      console.log(chalk.red(`   ❌ ${item}`));
+    });
+    console.log('');
+    
+    if (warnings.length > 0) {
+      warnings.forEach((warning) => {
+        console.log(chalk.yellow(`   ⚠️  ${warning}`));
+      });
+      console.log('');
+    }
+    
+    console.log(chalk.yellow('   You can continue, but local Supabase setup may fail.'));
+    console.log(chalk.yellow('   You can install missing prerequisites and run setup later.\n'));
+  } else if (warnings.length > 0) {
+    warnings.forEach((warning) => {
+      spinner?.warn(warning);
+    });
+  }
+}
 
 export interface SetupConfig {
   useProductionAuth?: boolean;
@@ -18,6 +59,19 @@ export interface SetupConfig {
 }
 
 export async function setupProject(projectPath: string, config: SetupConfig, spinner?: Ora) {
+  // Display prerequisites and setup instructions
+  if (spinner && spinner.isSpinning) {
+    spinner.stop();
+  }
+  displayPrerequisites(config);
+  
+  // Check for missing prerequisites and warn user
+  await checkPrerequisites(config, spinner);
+  
+  if (spinner) {
+    spinner.start('Starting setup...');
+  }
+  
   // Install dependencies
   if (spinner && spinner.isSpinning) {
     spinner.text = 'Installing dependencies (this may take a few minutes)...';
@@ -55,6 +109,12 @@ export async function setupProject(projectPath: string, config: SetupConfig, spi
       stdio: 'pipe',
     });
   }
+
+  // Test connectivity to database and auth services
+  if (spinner && spinner.isSpinning) {
+    spinner.text = 'Testing connectivity...';
+  }
+  await testConnectivity(projectPath, spinner);
 }
 
 async function setupLocalSupabase(projectPath: string, spinner?: Ora) {
@@ -171,10 +231,35 @@ async function createEnvFiles(projectPath: string, config: SetupConfig) {
       let content = await fs.readFile(envLocalPath, 'utf-8');
       content = content.replace(/^DATABASE_URL=.*$/m, '');
       if (!content.includes('DATABASE_URL')) {
+        const dbType = config.useProductionDatabase;
         content += '\n# Production Database\n';
-        content += '# DATABASE_URL=your-production-database-url\n';
+        if (dbType === 'supabase') {
+          content += '# Get your connection string from: https://supabase.com/dashboard/project/_/settings/database\n';
+        } else if (dbType === 'neon') {
+          content += '# Get your connection string from: https://console.neon.tech/\n';
+        } else {
+          content += '# Use your PostgreSQL connection string\n';
+        }
+        content += '# DATABASE_URL=postgresql://user:password@host:port/database\n';
       }
       await fs.writeFile(envLocalPath, content, 'utf-8');
+      
+      console.log(chalk.yellow('\n⚠️  Production Database Configuration Needed:'));
+      const dbType = config.useProductionDatabase;
+      if (dbType === 'supabase') {
+        console.log(chalk.white('   1. Create a Supabase project at https://supabase.com'));
+        console.log(chalk.white('   2. Get your database connection string from Project Settings > Database'));
+        console.log(chalk.white('   3. Update DATABASE_URL in .env.local'));
+      } else if (dbType === 'neon') {
+        console.log(chalk.white('   1. Create a Neon project at https://neon.tech'));
+        console.log(chalk.white('   2. Get your connection string from the dashboard'));
+        console.log(chalk.white('   3. Update DATABASE_URL in .env.local'));
+      } else {
+        console.log(chalk.white('   1. Ensure your PostgreSQL database is accessible'));
+        console.log(chalk.white('   2. Get your connection string (postgresql://user:pass@host:port/dbname)'));
+        console.log(chalk.white('   3. Update DATABASE_URL in .env.local'));
+      }
+      console.log('');
     }
 
     if (config.useProductionAuth) {
@@ -184,11 +269,89 @@ async function createEnvFiles(projectPath: string, config: SetupConfig) {
       content = content.replace(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=.*$/m, '');
       if (!content.includes('NEXT_PUBLIC_SUPABASE_URL')) {
         content += '\n# Production Supabase Auth\n';
+        content += '# Get your credentials from: https://supabase.com/dashboard/project/_/settings/api\n';
         content += '# NEXT_PUBLIC_SUPABASE_URL=your-supabase-url\n';
         content += '# NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key\n';
       }
       await fs.writeFile(envLocalPath, content, 'utf-8');
+      
+      console.log(chalk.yellow('⚠️  Production Auth Configuration Needed:'));
+      console.log(chalk.white('   1. Create a Supabase project at https://supabase.com (if not already done)'));
+      console.log(chalk.white('   2. Get your project URL from Project Settings > API'));
+      console.log(chalk.white('   3. Get your anon/public key from Project Settings > API'));
+      console.log(chalk.white('   4. Update NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local'));
+      console.log('');
     }
+  }
+}
+
+async function testConnectivity(projectPath: string, spinner?: Ora) {
+  try {
+    // Check if .env.local exists
+    const envLocalPath = path.join(projectPath, '.env.local');
+    if (!(await fs.pathExists(envLocalPath))) {
+      spinner?.warn('Skipping connectivity tests: .env.local not found');
+      return;
+    }
+
+    // Run the connectivity test script
+    execSync('pnpm test:connectivity', {
+      cwd: projectPath,
+      stdio: 'inherit',
+    });
+    
+    if (spinner && spinner.isSpinning) {
+      spinner.text = 'Connectivity tests passed';
+    }
+  } catch (error) {
+    // The test script will output its own error messages
+    // We just need to handle the case where the script fails
+    spinner?.warn('Some connectivity tests failed. Check the output above for details.');
+    
+    // Display helpful instructions based on what might be missing
+    console.log(chalk.yellow('\n📝 Setup Instructions:\n'));
+    
+    const envLocalPath = path.join(projectPath, '.env.local');
+    if (await fs.pathExists(envLocalPath)) {
+      const envContent = await fs.readFile(envLocalPath, 'utf-8');
+      
+      // Check what's missing or needs configuration
+      const needsDatabase = !envContent.match(/^DATABASE_URL=(?!.*#).*$/m) || 
+                           envContent.includes('your-production-database-url') ||
+                           envContent.includes('your-local-anon-key');
+      const needsAuth = !envContent.match(/^NEXT_PUBLIC_SUPABASE_URL=(?!.*#).*$/m) ||
+                        envContent.includes('your-supabase-url') ||
+                        envContent.includes('your-local-anon-key');
+      
+      if (needsDatabase) {
+        console.log(chalk.cyan('🗄️  Database Setup:'));
+        if (envContent.includes('localhost:54322')) {
+          console.log(chalk.white('   1. Make sure Supabase is running:'));
+          console.log(chalk.gray('      npx supabase start'));
+          console.log(chalk.white('   2. Or update DATABASE_URL in .env.local with your production database URL'));
+        } else {
+          console.log(chalk.white('   1. Update DATABASE_URL in .env.local with your database connection string'));
+          console.log(chalk.gray('      Format: postgresql://user:password@host:port/database'));
+        }
+        console.log('');
+      }
+      
+      if (needsAuth) {
+        console.log(chalk.cyan('🔐 Auth Setup:'));
+        if (envContent.includes('localhost:54321')) {
+          console.log(chalk.white('   1. Make sure Supabase is running:'));
+          console.log(chalk.gray('      npx supabase start'));
+          console.log(chalk.white('   2. The anon key will be fetched automatically when Supabase starts'));
+        } else {
+          console.log(chalk.white('   1. Get your Supabase project URL and anon key from:'));
+          console.log(chalk.gray('      https://supabase.com/dashboard/project/_/settings/api'));
+          console.log(chalk.white('   2. Update NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local'));
+        }
+        console.log('');
+      }
+    }
+    
+    console.log(chalk.yellow('💡 After configuring, run: pnpm test:connectivity\n'));
   }
 }
 

@@ -19,27 +19,37 @@ export interface SetupConfig {
 
 export async function setupProject(projectPath: string, config: SetupConfig, spinner?: Ora) {
   // Install dependencies
-  spinner?.text('Installing dependencies (this may take a few minutes)...');
+  if (spinner && spinner.isSpinning) {
+    spinner.text = 'Installing dependencies (this may take a few minutes)...';
+  }
   execSync('pnpm install', {
     cwd: projectPath,
     stdio: 'inherit',
   });
-  spinner?.text('Dependencies installed');
+  if (spinner && spinner.isSpinning) {
+    spinner.text = 'Dependencies installed';
+  }
 
   // Initialize Supabase if using local
   if (!config.useProductionDatabase) {
-    spinner?.text('Setting up local Supabase...');
+    if (spinner && spinner.isSpinning) {
+      spinner.text = 'Setting up local Supabase...';
+    }
     await setupLocalSupabase(projectPath, spinner);
   }
 
   // Create .env files
-  spinner?.text('Configuring environment variables...');
+  if (spinner && spinner.isSpinning) {
+    spinner.text = 'Configuring environment variables...';
+  }
   await createEnvFiles(projectPath, config);
 
   // Initialize git if not already initialized
   const gitPath = path.join(projectPath, '.git');
   if (!(await fs.pathExists(gitPath))) {
-    spinner?.text('Initializing git repository...');
+    if (spinner && spinner.isSpinning) {
+      spinner.text = 'Initializing git repository...';
+    }
     execSync('git init', {
       cwd: projectPath,
       stdio: 'pipe',
@@ -64,7 +74,9 @@ async function setupLocalSupabase(projectPath: string, spinner?: Ora) {
     // Check if supabase directory already exists (from template)
     const supabasePath = path.join(projectPath, 'supabase');
     if (!(await fs.pathExists(supabasePath))) {
-      spinner?.text('Initializing Supabase...');
+      if (spinner && spinner.isSpinning) {
+        spinner.text = 'Initializing Supabase...';
+      }
       execSync('npx supabase init', {
         cwd: projectPath,
         stdio: 'pipe',
@@ -73,14 +85,20 @@ async function setupLocalSupabase(projectPath: string, spinner?: Ora) {
 
     // Check if Supabase is already running
     if (await isSupabaseRunning(projectPath)) {
-      spinner?.text('Supabase is already running');
+      if (spinner && spinner.isSpinning) {
+        spinner.text = 'Supabase is already running';
+      }
     } else {
-      spinner?.text('Starting Supabase (this may take 1-2 minutes)...');
+      if (spinner && spinner.isSpinning) {
+        spinner.text = 'Starting Supabase (this may take 1-2 minutes)...';
+      }
       execSync('npx supabase start', {
         cwd: projectPath,
         stdio: 'pipe',
       });
-      spinner?.text('Supabase started successfully');
+      if (spinner && spinner.isSpinning) {
+        spinner.text = 'Supabase started successfully';
+      }
     }
   } catch (error) {
     spinner?.warn('Supabase setup skipped (can start manually later)');

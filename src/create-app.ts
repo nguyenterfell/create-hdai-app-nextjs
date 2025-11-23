@@ -103,14 +103,16 @@ export async function createApp(options: CreateAppOptions) {
   
   // Restart spinner after prompts
   if (options.spinner) {
-    options.spinner.text('Creating project directory...').start();
+    options.spinner.start('Creating project directory...');
   }
 
   // Create project directory
   await fs.ensureDir(projectPath);
 
   // Copy template files
-  options.spinner?.text('Copying template files...');
+  if (options.spinner && options.spinner.isSpinning) {
+    options.spinner.text = 'Copying template files...';
+  }
   const templateDir = path.join(__dirname, '..', 'templates', 'app');
   await copyTemplate(templateDir, projectPath, {
     projectName,
@@ -118,7 +120,9 @@ export async function createApp(options: CreateAppOptions) {
   });
 
   // Process template files (replace placeholders)
-  options.spinner?.text('Processing template files...');
+  if (options.spinner && options.spinner.isSpinning) {
+    options.spinner.text = 'Processing template files...';
+  }
   await processTemplateFiles(projectPath, {
     PROJECT_NAME: projectName,
     USE_PRODUCTION_AUTH: config.useProductionAuth ? 'true' : 'false',

@@ -24,6 +24,11 @@ export interface CreateAppOptions {
 export async function createApp(options: CreateAppOptions) {
   let { projectName, path: basePath, fast } = options;
   
+  // Stop spinner during prompts to avoid interference
+  if (options.spinner) {
+    options.spinner.stop();
+  }
+  
   // Prompt for project name if not provided
   if (!projectName) {
     const answer = await inquirer.prompt([
@@ -94,6 +99,11 @@ export async function createApp(options: CreateAppOptions) {
     ]);
 
     config = { ...config, ...answers };
+  }
+  
+  // Restart spinner after prompts
+  if (options.spinner) {
+    options.spinner.start();
   }
 
   // Create project directory

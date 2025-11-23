@@ -171,7 +171,8 @@ program
   .option('--fast', 'Skip interactive prompts, use defaults')
   .option('--path <path>', 'Path to create the project', process.cwd())
   .action(async (projectName, options) => {
-    const spinner = ora('Initializing...').start();
+    // Create spinner but don't start it yet (will be started after prompts)
+    const spinner = ora();
     
     try {
       await createApp({

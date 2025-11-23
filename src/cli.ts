@@ -172,7 +172,8 @@ program
   .option('--path <path>', 'Path to create the project', process.cwd())
   .action(async (projectName, options) => {
     // Create spinner but don't start it yet (will be started after prompts)
-    const spinner = ora();
+    // Initialize with empty text - will be set when started
+    const spinner = ora('');
     
     try {
       await createApp({

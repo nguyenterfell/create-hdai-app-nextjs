@@ -103,11 +103,10 @@ export async function createApp(options: CreateAppOptions) {
   
   // Restart spinner after prompts
   if (options.spinner) {
-    options.spinner.start();
+    options.spinner.text('Creating project directory...').start();
   }
 
   // Create project directory
-  options.spinner?.text('Creating project directory...');
   await fs.ensureDir(projectPath);
 
   // Copy template files
